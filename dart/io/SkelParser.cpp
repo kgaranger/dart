@@ -45,6 +45,8 @@
 #include "dart/collision/dart/DARTCollisionDetector.hpp"
 #include "dart/collision/fcl/FCLCollisionDetector.hpp"
 #include "dart/constraint/ConstraintSolver.hpp"
+#include "dart/constraint/WeldJointConstraint.hpp"
+#include "dart/constraint/BallJointConstraint.hpp"
 #include "dart/dynamics/BodyNode.hpp"
 #include "dart/dynamics/SoftBodyNode.hpp"
 #include "dart/dynamics/ShapeNode.hpp"
@@ -108,6 +110,13 @@ struct SkelJoint
   Eigen::VectorXd velocity;
   Eigen::VectorXd acceleration;
   Eigen::VectorXd force;
+  std::string parentName;
+  std::string childName;
+  std::string type;
+};
+
+struct SkelJointConstraint
+{
   std::string parentName;
   std::string childName;
   std::string type;
@@ -219,6 +228,8 @@ JointPropPtr readWeldJoint(
     SkelJoint& _joint,
     const std::string& _name);
 
+SkelJointConstraint readJointConstraint(tinyxml2::XMLElement* _jointConstraintElement);
+
 common::ResourceRetrieverPtr getRetriever(
     const common::ResourceRetrieverPtr& _retriever);
 
@@ -274,6 +285,10 @@ bool createJointAndNodePair(dynamics::SkeletonPtr skeleton,
                             dynamics::BodyNode* parent,
                             const SkelJoint& joint,
                             const SkelBodyNode& body);
+
+void createJointConstraint(simulation::WorldPtr world,
+                            dynamics::SkeletonPtr skeleton,
+                            const SkelJointConstraint& jointConstraint);
 
 dynamics::SkeletonPtr readSkeleton(
     tinyxml2::XMLElement* _skeletonElement,
@@ -769,6 +784,16 @@ simulation::WorldPtr readWorld(
     dynamics::SkeletonPtr newSkeleton
         = ::dart::io::readSkeleton(SkeletonElements.get(), _baseUri, _retriever);
 
+    //-------------------------------------------------------------------------
+    // Add JointConstraints
+    ElementEnumerator xmlJointConstraints(SkeletonElements.get(), "joint_constraint");
+    while (xmlJointConstraints.next())
+    {
+      SkelJointConstraint newJointConstraint = readJointConstraint(xmlJointConstraints.get());
+      createJointConstraint(newWorld, newSkeleton, newJointConstraint);
+    }
+
+
     newWorld->addSkeleton(newSkeleton);
   }
 
@@ -918,6 +943,24 @@ bool createJointAndNodePair(dynamics::SkeletonPtr skeleton,
     bn->createNode<dynamics::Marker>(body.markers[i]);
 
   return true;
+}
+
+//==============================================================================
+void createJointConstraint(simulation::WorldPtr world, dynamics::SkeletonPtr skeleton, const SkelJointConstraint& jointConstraint)
+{
+  dynamics::BodyNode* parent = skeleton->getBodyNode(jointConstraint.parentName);
+  dynamics::BodyNode* child = skeleton->getBodyNode(jointConstraint.childName);
+  if(std::string("weld") == jointConstraint.type) {
+    dart::constraint::ConstraintBasePtr weldConstraint = std::make_shared<dart::constraint::WeldJointConstraint>(parent, child);
+      world->getConstraintSolver()->addConstraint(weldConstraint);
+  }
+  // else if(std::string("ball") == jointConstraint.type) {
+
+  //   constraint::BallJointConstraint* ballConstraint;
+
+  //   auto ballConstraint = std::make_shared<constraint::BallJointConstraint>(parent, child);
+  //     world->getConstraintSolver()->addConstraint(ballConstraint);
+  // }
 }
 
 //==============================================================================
@@ -1573,6 +1616,88 @@ void readJoint(tinyxml2::XMLElement* _jointElement,
 
   _order[nextIndex] = joint.childName;
   _lookup[joint.childName] = nextIndex;
+}
+
+SkelJointConstraint readJointConstraint(tinyxml2::XMLElement* _jointConstraintElement)
+{
+  assert(_jointConstraintElement != nullptr);
+
+  //--------------------------------------------------------------------------
+  // Name attribute
+  std::string name = getAttributeString(_jointConstraintElement, "name");
+
+  SkelJointConstraint joint;
+
+  //--------------------------------------------------------------------------
+  // Type attribute
+  joint.type = getAttributeString(_jointConstraintElement, "type");
+  assert(!joint.type.empty());
+  if (joint.type == std::string("weld"))
+    // joint.properties = readWeldJoint(_jointElement, joint, name);
+    ;
+  else if (joint.type == std::string("ball"))
+    // joint.properties = readBallJoint(_jointElement, joint, name);
+    ;
+  else
+  {
+    dterr << "[readJoint] Unsupported jointConstraint type [" << joint.type
+          << "] requested by Joint named [" << name << "]. This Joint will be "
+          << "discarded.\n";
+    assert(0);
+  }
+
+  //--------------------------------------------------------------------------
+  // parent
+  // BodyMap::const_iterator parent = _bodyNodes.end();
+  if (hasElement(_jointConstraintElement, "parent"))
+  {
+    joint.parentName = getValueString(_jointConstraintElement, "parent");
+    // parent = _bodyNodes.find(joint.parentName);
+  }
+  else
+  {
+    dterr << "[readJoint] Joint named [" << name << "] is missing "
+          << "a parent BodyNode!\n";
+    assert(0);
+  }
+
+  // Use an empty string (rather than "world") to indicate that the joint has no parent
+  // if(joint.parentName == std::string("world")
+     // && _bodyNodes.find("world") == _bodyNodes.end())
+    // joint.parentName.clear();
+
+  // if(parent == _bodyNodes.end() && !joint.parentName.empty())
+  // {
+    // dterr << "[readJoint] Could not find a BodyNode named ["
+          // << joint.parentName << "] requested as the parent of Joint named ["
+          // << name << "]!\n";
+    // return;
+  // }
+
+  //--------------------------------------------------------------------------
+  // child
+  // BodyMap::const_iterator child = _bodyNodes.end();
+  if (hasElement(_jointConstraintElement, "child"))
+  {
+    joint.childName = getValueString(_jointConstraintElement, "child");
+    // child = _bodyNodes.find(joint.childName);
+  }
+  else
+  {
+    dterr << "[readJoint] Joint named [" << name << "] is missing "
+          << "a child BodyNode!\n";
+    assert(0);
+  }
+
+  // if(child == _bodyNodes.end())
+  // {
+    // dterr << "[readJoint] Could not find a BodyNode named ["
+          // << joint.childName << "] requested as the child of Joint named ["
+          // << name << "]!\n";
+    // return;
+  // }
+
+  return joint;
 }
 
 //==============================================================================
