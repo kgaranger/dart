@@ -120,6 +120,7 @@ struct SkelJointConstraint
   std::string parentName;
   std::string childName;
   std::string type;
+  Eigen::VectorXd position;
 };
 
 // first: BodyNode name | second: BodyNode information
@@ -948,19 +949,22 @@ bool createJointAndNodePair(dynamics::SkeletonPtr skeleton,
 //==============================================================================
 void createJointConstraint(simulation::WorldPtr world, dynamics::SkeletonPtr skeleton, const SkelJointConstraint& jointConstraint)
 {
+
+  throw "exception";
   dynamics::BodyNode* parent = skeleton->getBodyNode(jointConstraint.parentName);
   dynamics::BodyNode* child = skeleton->getBodyNode(jointConstraint.childName);
   if(std::string("weld") == jointConstraint.type) {
+    dterr << "Weld joint created\n";
     dart::constraint::ConstraintBasePtr weldConstraint = std::make_shared<dart::constraint::WeldJointConstraint>(parent, child);
       world->getConstraintSolver()->addConstraint(weldConstraint);
   }
-  // else if(std::string("ball") == jointConstraint.type) {
-
-  //   constraint::BallJointConstraint* ballConstraint;
-
-  //   auto ballConstraint = std::make_shared<constraint::BallJointConstraint>(parent, child);
-  //     world->getConstraintSolver()->addConstraint(ballConstraint);
-  // }
+  else if(std::string("ball") == jointConstraint.type) {
+    dterr << "Ball joint created\n";
+    Eigen::Vector3d jointPos = jointConstraint.position;
+    
+    dart::constraint::ConstraintBasePtr ballConstraint = std::make_shared<constraint::BallJointConstraint>(parent, child, jointPos);
+      world->getConstraintSolver()->addConstraint(ballConstraint);
+  }
 }
 
 //==============================================================================
@@ -1661,19 +1665,6 @@ SkelJointConstraint readJointConstraint(tinyxml2::XMLElement* _jointConstraintEl
     assert(0);
   }
 
-  // Use an empty string (rather than "world") to indicate that the joint has no parent
-  // if(joint.parentName == std::string("world")
-     // && _bodyNodes.find("world") == _bodyNodes.end())
-    // joint.parentName.clear();
-
-  // if(parent == _bodyNodes.end() && !joint.parentName.empty())
-  // {
-    // dterr << "[readJoint] Could not find a BodyNode named ["
-          // << joint.parentName << "] requested as the parent of Joint named ["
-          // << name << "]!\n";
-    // return;
-  // }
-
   //--------------------------------------------------------------------------
   // child
   // BodyMap::const_iterator child = _bodyNodes.end();
@@ -1689,13 +1680,13 @@ SkelJointConstraint readJointConstraint(tinyxml2::XMLElement* _jointConstraintEl
     assert(0);
   }
 
-  // if(child == _bodyNodes.end())
-  // {
-    // dterr << "[readJoint] Could not find a BodyNode named ["
-          // << joint.childName << "] requested as the child of Joint named ["
-          // << name << "]!\n";
-    // return;
-  // }
+  if (hasElement(_jointConstraintElement, "position")) {
+    joint.position = getValueVector3d(_jointConstraintElement, "position");
+  }
+  else
+  {
+    joint.position = Eigen::Vector3d(0, 0, 0);
+  }
 
   return joint;
 }
